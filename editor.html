@@ -1,0 +1,445 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Level Editor</title>
+  <link rel="icon" type="image/x-icon" href="icon.png" />
+  <script src="helpers.js"></script>
+  <script src="sprite.js"></script>
+  <script src="grid.js"></script>
+  <script src="input.js"></script>
+  <script src="puzzle.js"></script>
+  <script src="levels.js"></script>
+  <script src="render.js"></script>
+  <style>
+    body {
+      font-family: sans-serif;
+      display: flex;
+      gap: 16px;
+      align-items: flex-start;
+    }
+
+    canvas {
+      background-color: lightgray;
+      display: block;
+    }
+
+    #side {
+      width: 340px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    #side h3 {
+      margin: 4px 0 0;
+      font-size: 14px;
+      color: #444;
+    }
+
+    .row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      align-items: center;
+    }
+
+    .tool {
+      min-width: 44px;
+      padding: 6px;
+    }
+
+    .tool.active {
+      background: #222;
+      color: white;
+    }
+
+    .swatch {
+      width: 32px;
+      height: 32px;
+      border: 3px solid transparent;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+
+    .swatch.active {
+      border-color: #222;
+    }
+
+    input[type=text] {
+      width: 100%;
+      box-sizing: border-box;
+    }
+
+    input[type=number] {
+      width: 50px;
+    }
+
+    textarea {
+      width: 100%;
+      height: 200px;
+      box-sizing: border-box;
+      font-family: monospace;
+      font-size: 12px;
+    }
+
+    #status {
+      padding: 6px 8px;
+      border-radius: 6px;
+      background: #eee;
+    }
+
+    #status.ok {
+      background: #d7f0ec;
+      color: #1d6f65;
+    }
+
+    .help {
+      font-size: 12px;
+      color: #555;
+      margin: 0;
+    }
+  </style>
+</head>
+
+<body>
+  <canvas width="800" height="700"></canvas>
+  <div id="side">
+    <div class="row">
+      <select id="open"></select>
+      <button id="new">New</button>
+      <button id="playtest">Playtest</button>
+    </div>
+
+    <input id="name" type="text" placeholder="Level name" />
+    <input id="hint" type="text" placeholder="Hint shown under the board" />
+    <div class="row">
+      Width <input id="width" type="number" min="1" max="8" />
+      Height <input id="height" type="number" min="1" max="7" />
+    </div>
+
+    <h3>Tool</h3>
+    <div class="row" id="tools"></div>
+    <div class="row" id="swatches"></div>
+    <p class="help">
+      Click a cell to paint it. Click a piece again with the same tool to rotate it,
+      or use Rotate to turn any piece without replacing it.
+      Right-click erases. "Tray" makes a piece start in the tray, leaving a gap.
+      Build the level solved; the game scrambles it.
+    </p>
+
+    <div id="status"></div>
+
+    <h3>Scramble</h3>
+    <div class="row">
+      <button id="shuffle">Shuffle</button>
+      <button id="save-seed">Save seed</button>
+      <button id="view">Show scrambled</button>
+    </div>
+    <p class="help" id="seed-label"></p>
+
+    <h3>Level code (paste into LEVELS in levels.js)</h3>
+    <textarea id="code" spellcheck="false"></textarea>
+    <div class="row">
+      <button id="copy">Copy</button>
+      <button id="load">Load from code</button>
+    </div>
+  </div>
+  <script>
+
+    const canvas = document.querySelector("canvas");
+    const ctx = canvas.getContext("2d");
+
+    const SCALE = 100;
+    const MAX_TRAY = 5;
+    const COLOR_LETTERS = Object.keys(COLORS);
+    const TOOLS = ["Rotate", "I", "L", "U", "T", "X", "C", "O", "Source", "Goal", "Gap", "Erase", "Tray"];
+
+    // cells[x][y] is null (empty), "_" (gap), or { name, rot, color, tray }
+    let cells = [];
+    let width = 5;
+    let height = 3;
+    let tool = "I";
+    let color = "r";
+    let board;
+    let display;
+    let grid;
+    let hovering = false;
+    let saved_seed = null;
+    let preview_seed = null;
+    let show_scrambled = false;
+
+    function blankCells(w, h) {
+      return range(0, w).map(() => range(0, h).map(() => null));
+    }
+
+    function tokenFor(cell) {
+      if (!cell) return ".";
+      if (cell == "_") return "_";
+      let fixed = PIECES[cell.name].fixed;
+      return cell.name + (fixed ? cell.color : cell.rot) + (cell.tray ? "*" : "");
+    }
+
+    function parseCell(token) {
+      if (token == ".") return null;
+      if (token == "_") return "_";
+      let name = token[0];
+      let rest = token.slice(1);
+      let cell = { name, rot: 0, color: "r", tray: rest.endsWith("*") };
+      if (PIECES[name].fixed) cell.color = rest[0];
+      else cell.rot = +rest[0];
+      return cell;
+    }
+
+    // rows with each column padded to the same width, like levels.js
+    function toRows() {
+      let tokens = cells.map(column => column.map(tokenFor));
+      let widths = tokens.map(column => Math.max(...column.map(t => t.length)));
+      return range(0, height).map(y =>
+        range(0, width).map(x => tokens[x][y].padEnd(widths[x])).join(" ").trimEnd()
+      );
+    }
+
+    function currentLevel() {
+      let level = { name: obj("#name").value, hint: obj("#hint").value, rows: toRows() };
+      if (saved_seed != null) level.seed = saved_seed;
+      return level;
+    }
+
+    function levelCode(level) {
+      let lines = [
+        "    {",
+        `        name: ${JSON.stringify(level.name)},`,
+        `        hint: ${JSON.stringify(level.hint)},`,
+        "        rows: [",
+        ...level.rows.map(r => `            ${JSON.stringify(r)},`),
+        "        ],",
+      ];
+      if (level.seed != null) lines.push(`        seed: ${level.seed},`);
+      lines.push("    },");
+      return lines.join("\n");
+    }
+
+    function loadLevel(level) {
+      let rows = level.rows.map(r => r.trim().split(/\s+/));
+      height = rows.length;
+      width = rows[0].length;
+      cells = blankCells(width, height);
+      for (let x = 0; x < width; x++) {
+        for (let y = 0; y < height; y++) cells[x][y] = parseCell(rows[y][x] || ".");
+      }
+      obj("#name").value = level.name || "";
+      obj("#hint").value = level.hint || "";
+      saved_seed = level.seed ?? null;
+      preview_seed = null;
+      show_scrambled = false;
+      rebuild();
+    }
+
+    function resize(w, h) {
+      let next = blankCells(w, h);
+      for (let x = 0; x < Math.min(w, width); x++) {
+        for (let y = 0; y < Math.min(h, height); y++) next[x][y] = cells[x][y];
+      }
+      width = w;
+      height = h;
+      cells = next;
+      rebuild();
+    }
+
+    // builds a solved preview board and refreshes the code and status
+    function rebuild() {
+      obj("#width").value = width;
+      obj("#height").value = height;
+      let level = currentLevel();
+      obj("#code").value = levelCode(level);
+
+      board = new Board(level);
+      for (let item of [...board.tray]) board.place(board.tray.indexOf(item), item.home.x, item.home.y);
+      board.forEachItem(addSprite);
+      grid = new Grid(width, height, SCALE);
+      grid.offsetX = (canvas.width - width * SCALE) / 2;
+      grid.offsetY = (canvas.height - height * SCALE) / 2;
+
+      let solved = board.flow();
+      let sources = 0, goals = 0, lit = 0, tray = 0;
+      board.forEachItem(item => {
+        if (item.color) sources++;
+        if (item.target) goals++;
+        if (item.target && item.colors[0] == item.target) lit++;
+      });
+      cells.flat().forEach(c => { if (c && c.tray) tray++; });
+      let problems = [];
+      if (!sources) problems.push("needs a source");
+      if (!goals) problems.push("needs a goal");
+      if (goals && lit < goals) problems.push(`${lit} of ${goals} goals lit`);
+      if (goals && lit == goals && !solved) problems.push("a source isn't reaching a goal of its color");
+      if (tray > MAX_TRAY) problems.push(`only ${MAX_TRAY} tray pieces fit`);
+      let status = obj("#status");
+      status.classList.toggle("ok", solved && tray <= MAX_TRAY);
+      status.textContent = solved && tray <= MAX_TRAY
+        ? "Solution works: every goal is lit by a matching source."
+        : "Not solved as built: " + problems.join(", ") + ".";
+
+      display = board;
+      if (show_scrambled) {
+        display = new Board(level);
+        display.scramble(preview_seed ?? display.seed);
+        display.forEachItem(addSprite);
+        display.flow();
+      }
+      obj("#view").textContent = show_scrambled ? "Show solution" : "Show scrambled";
+      let label = saved_seed != null
+        ? `Saved seed: ${saved_seed}.`
+        : "No saved seed, so it scrambles with one made from the layout (changes when you edit).";
+      if (preview_seed != null && preview_seed != saved_seed) label += ` Previewing unsaved seed ${preview_seed}.`;
+      obj("#seed-label").textContent = label;
+    }
+
+    function paint(x, y) {
+      let cell = cells[x][y];
+      let is_piece = cell && cell != "_";
+      if (tool == "Rotate") {
+        if (is_piece && !PIECES[cell.name].fixed) cell.rot = (cell.rot + 1) % 4;
+      } else if (tool == "Erase") cells[x][y] = null;
+      else if (tool == "Gap") cells[x][y] = "_";
+      else if (tool == "Tray") {
+        if (is_piece && !PIECES[cell.name].fixed) cell.tray = !cell.tray;
+      } else if (tool == "Source" || tool == "Goal") {
+        cells[x][y] = { name: tool == "Source" ? "0" : "G", rot: 0, color, tray: false };
+      } else if (is_piece && cell.name == tool) {
+        cell.rot = (cell.rot + 1) % 4;
+      } else {
+        cells[x][y] = { name: tool, rot: 0, color, tray: false };
+      }
+      show_scrambled = false;
+      rebuild();
+    }
+
+    function setupTools() {
+      for (let t of TOOLS) {
+        let b = create("button", t);
+        b.className = "tool";
+        b.on("click", () => {
+          tool = t;
+          document.querySelectorAll(".tool").forEach(e => e.classList.toggle("active", e == b));
+        });
+        if (t == tool) b.classList.add("active");
+        obj("#tools").appendChild(b);
+      }
+      for (let letter of COLOR_LETTERS) {
+        let s = create("div");
+        s.className = "swatch" + (letter == color ? " active" : "");
+        s.style.background = COLORS[letter];
+        s.title = "Color for sources and goals";
+        s.on("click", () => {
+          color = letter;
+          document.querySelectorAll(".swatch").forEach(e => e.classList.toggle("active", e == s));
+        });
+        obj("#swatches").appendChild(s);
+      }
+      let open = obj("#open");
+      let placeholder = create("option", "Open level...");
+      placeholder.value = "";
+      open.appendChild(placeholder);
+      LEVELS.forEach((level, i) => {
+        let o = create("option", `${i + 1}. ${level.name}`);
+        o.value = i;
+        open.appendChild(o);
+      });
+      open.on("change", () => {
+        if (open.value !== "") loadLevel(LEVELS[+open.value]);
+        open.selectedIndex = 0;
+      });
+    }
+
+    setupTools();
+    mouse.start(canvas);
+    canvas.on("mouseenter", () => hovering = true);
+    canvas.on("mouseleave", () => hovering = false);
+    obj("#name").on("input", rebuild);
+    obj("#hint").on("input", rebuild);
+    obj("#width").on("change", () => resize(Math.max(1, Math.min(8, +obj("#width").value || 1)), height));
+    obj("#height").on("change", () => resize(width, Math.max(1, Math.min(7, +obj("#height").value || 1))));
+    obj("#new").on("click", () => {
+      cells = blankCells(5, 3);
+      width = 5;
+      height = 3;
+      obj("#name").value = "";
+      obj("#hint").value = "";
+      saved_seed = null;
+      preview_seed = null;
+      show_scrambled = false;
+      rebuild();
+    });
+    obj("#shuffle").on("click", () => {
+      preview_seed = Math.floor(Math.random() * 2 ** 32);
+      show_scrambled = true;
+      rebuild();
+    });
+    obj("#save-seed").on("click", () => {
+      if (preview_seed != null) saved_seed = preview_seed;
+      rebuild();
+    });
+    obj("#view").on("click", () => {
+      show_scrambled = !show_scrambled;
+      rebuild();
+    });
+    obj("#copy").on("click", () => navigator.clipboard.writeText(obj("#code").value));
+    obj("#load").on("click", () => {
+      try {
+        let text = obj("#code").value.trim().replace(/,$/, "");
+        loadLevel(Function(`return (${text})`)());
+      } catch (e) {
+        alert("Couldn't read that level code:\n" + e.message);
+      }
+    });
+    obj("#playtest").on("click", () => {
+      localStorage.setItem("playtest", JSON.stringify(currentLevel()));
+      window.open("index.html?playtest", "_blank");
+    });
+
+    loadLevel(LEVELS[0]);
+
+    function loop() {
+      setTimeout(loop, 1000 / 60);
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      let tile = hovering ? grid.getActiveTile() : null;
+      if (tile && mouse.down) paint(tile.x, tile.y);
+      if (tile && mouse.right) {
+        cells[tile.x][tile.y] = null;
+        show_scrambled = false;
+        rebuild();
+      }
+      mouse.down = false;
+      mouse.right = false;
+
+      grid.forEach(t => {
+        let s = grid.scale;
+        ctx.strokeStyle = t == tile ? "#222" : "#bbb";
+        ctx.lineWidth = t == tile ? 3 : 1;
+        ctx.strokeRect(grid.offsetX + t.x * s, grid.offsetY + t.y * s, s, s);
+        let cell = display.getCell(t.x, t.y);
+        if (cell && cell.gap) drawGap(t.getCenter().x, t.getCenter().y, false);
+      });
+      display.forEachItem((item, x, y) => {
+        let ct = grid.tiles[x][y].getCenter();
+        drawItem(item, ct.x, ct.y);
+        if (item.home) {
+          ctx.fillStyle = "#222";
+          ctx.font = "bold 12px sans-serif";
+          ctx.textAlign = "left";
+          ctx.fillText("TRAY", ct.x - 44, ct.y - 34);
+        }
+      });
+    }
+
+    loop();
+
+  </script>
+</body>
+
+</html>

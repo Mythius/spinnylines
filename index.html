@@ -1,0 +1,286 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Connect</title>
+  <link rel="icon" type="image/x-icon" href="icon.png" />
+  <!-- <script src="voice.js"></script> -->
+  <script src="helpers.js"></script>
+  <script src="sprite.js"></script>
+  <script src="grid.js"></script>
+  <script src="input.js"></script>
+  <script src="puzzle.js"></script>
+  <script src="levels.js"></script>
+  <script src="render.js"></script>
+  <style>
+    body {
+      font-family: sans-serif;
+    }
+
+    body {
+      margin: 8px;
+    }
+
+    canvas {
+      background-color: lightgray;
+      display: block;
+      margin: 0 auto;
+      width: auto;
+      height: auto;
+      max-width: 100%;
+      /* leaves room for the level name, hint and buttons */
+      max-height: calc(100vh - 140px);
+      touch-action: none;
+      -webkit-touch-callout: none;
+      -webkit-user-select: none;
+      user-select: none;
+    }
+
+    #hud {
+      max-width: 1000px;
+      margin: 0 auto;
+      padding: 8px 0;
+    }
+
+    #hud button {
+      font-size: 16px;
+      padding: 8px 16px;
+    }
+
+    #hud p {
+      margin: 6px 0;
+      color: #444;
+    }
+
+    #hud button.ready {
+      background: #2a9d8f;
+      color: white;
+      font-weight: bold;
+    }
+  </style>
+</head>
+
+<body>
+  <canvas width="1000" height="700"></canvas>
+  <div id="hud">
+    <b id="level-name"></b> <span id="level-count"></span>
+    <p id="level-hint"></p>
+    <button id="prev">Prev</button>
+    <button id="reset">Reset</button>
+    <button id="next">Next</button>
+  </div>
+  <!-- <script src="music.js"></script> -->
+  <script>
+
+    const canvas = document.querySelector("canvas");
+    const ctx = canvas.getContext("2d");
+
+    const SCALE = 100;
+    const BOARD_WIDTH = 800;
+    const TRAY_X = 900;
+    const TRAY_SPACING = 115;
+    const TURN_SPEED = 90 / 7;
+    const HOLD_MS = 450;
+
+    // index.html?playtest plays the level the editor saved instead of LEVELS,
+    // and index.html?level=5 starts on level 5
+    const params = new URLSearchParams(location.search);
+    let levels = LEVELS;
+    if (params.has("playtest")) {
+      try {
+        levels = [JSON.parse(localStorage.getItem("playtest"))];
+      } catch (e) {
+        console.warn("No playtest level found", e);
+      }
+    }
+
+    let level_index = 0;
+    let board;
+    let grid;
+    let tray_size = 0;
+    let selected = -1;
+    let solved = false;
+    // portrait puts the tray in a row under the board instead of beside it
+    let portrait = false;
+    let tray_top = 0;
+
+    function loadLevel(index) {
+      level_index = (index + levels.length) % levels.length;
+      board = new Board(levels[level_index]);
+      board.scramble();
+      grid = new Grid(board.width, board.height, SCALE);
+      board.forEachItem(addSprite);
+      board.tray.forEach(addSprite);
+      tray_size = board.tray.length;
+      selected = -1;
+      solved = false;
+      layout();
+      obj("#level-name").textContent = board.name;
+      obj("#level-count").textContent = `(${level_index + 1} / ${levels.length})`;
+      obj("#level-hint").textContent = board.hint;
+      obj("#next").classList.remove("ready");
+    }
+
+    function layout() {
+      portrait = window.innerHeight > window.innerWidth;
+      let board_height = board.height * SCALE;
+      if (portrait) {
+        canvas.width = BOARD_WIDTH;
+        canvas.height = 90 + board_height + (tray_size ? 190 : 30);
+        grid.offsetY = 90;
+        tray_top = 90 + board_height + 20;
+      } else {
+        canvas.width = tray_size ? 1000 : BOARD_WIDTH;
+        canvas.height = 700;
+        grid.offsetY = (canvas.height - board_height) / 2;
+      }
+      grid.offsetX = (BOARD_WIDTH - board.width * SCALE) / 2;
+    }
+
+    function traySlot(i) {
+      if (portrait) return { x: BOARD_WIDTH / 2 + (i - (tray_size - 1) / 2) * TRAY_SPACING, y: tray_top + 95 };
+      return { x: TRAY_X, y: 130 + i * TRAY_SPACING };
+    }
+
+    function drawTray() {
+      ctx.fillStyle = "#c4c4c4";
+      ctx.beginPath();
+      if (portrait) ctx.roundRect(20, tray_top, canvas.width - 40, 160, 12);
+      else ctx.roundRect(TRAY_X - 75, 20, 150, canvas.height - 40, 12);
+      ctx.fill();
+      ctx.fillStyle = "#444";
+      ctx.font = "bold 18px sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillText("Pieces", portrait ? BOARD_WIDTH / 2 : TRAY_X, portrait ? tray_top + 28 : 55);
+      board.tray.forEach((item, i) => {
+        let slot = traySlot(i);
+        if (i == selected) {
+          ctx.fillStyle = "#f5f5f5";
+          ctx.beginPath();
+          ctx.roundRect(slot.x - 52, slot.y - 52, 104, 104, 10);
+          ctx.fill();
+        }
+        drawItem(item, slot.x, slot.y, PIECES[item.name].groups.map(() => UNLIT));
+      });
+    }
+
+    function handleInput() {
+      if (mouse.down) {
+        mouse.down = false;
+        let { x, y } = mouse.pos;
+        let tray_index = board.tray.findIndex((item, i) => {
+          let slot = traySlot(i);
+          return Math.abs(x - slot.x) < 50 && Math.abs(y - slot.y) < 50;
+        });
+        if (tray_index >= 0) {
+          selected = selected == tray_index ? -1 : tray_index;
+          return;
+        }
+        let tile = grid.getActiveTile();
+        if (!tile) {
+          selected = -1;
+          return;
+        }
+        let cell = board.getCell(tile.x, tile.y);
+        if (selected >= 0 && cell && cell.gap) {
+          // a filled gap swaps its piece back into the tray
+          board.pickUp(tile.x, tile.y);
+          board.place(selected, tile.x, tile.y);
+          selected = -1;
+        } else {
+          board.rotate(tile.x, tile.y);
+        }
+      }
+      if (mouse.right) {
+        mouse.right = false;
+        let tile = grid.getActiveTile();
+        if (tile) board.pickUp(tile.x, tile.y);
+        selected = -1;
+      }
+    }
+
+    mouse.start(canvas);
+
+    // taps act like a left click, press-and-hold like a right click
+    function touchToMouse(x, y) {
+      let br = canvas.getBoundingClientRect();
+      mouse.pos.x = x * canvas.width / br.width;
+      mouse.pos.y = y * canvas.height / br.height;
+    }
+    // the hold fires while the finger is still down, since phones often
+    // cancel a long touch instead of ending it
+    let hold_timer = null;
+    let held = false;
+    let hold_start = null;
+    canvas.addEventListener("touchstart", e => {
+      let t = e.touches[0];
+      let br = canvas.getBoundingClientRect();
+      hold_start = { x: t.clientX - br.left, y: t.clientY - br.top };
+      held = false;
+      clearTimeout(hold_timer);
+      hold_timer = setTimeout(() => {
+        held = true;
+        touchToMouse(hold_start.x, hold_start.y);
+        mouse.right = true;
+      }, HOLD_MS);
+    }, { passive: true });
+    canvas.addEventListener("touchmove", e => {
+      let t = e.touches[0];
+      let br = canvas.getBoundingClientRect();
+      if (Math.hypot(t.clientX - br.left - hold_start.x, t.clientY - br.top - hold_start.y) > 10) clearTimeout(hold_timer);
+    }, { passive: true });
+    // preventDefault stops the browser from also sending mouse events for the same tap
+    canvas.addEventListener("touchend", e => { clearTimeout(hold_timer); e.preventDefault(); }, { passive: false });
+    canvas.addEventListener("touchcancel", () => clearTimeout(hold_timer));
+    Touch.init(e => {
+      if (e.type != "click" || e.target != canvas || held) return;
+      touchToMouse(e.x, e.y);
+      mouse.down = true;
+    }, { zoom: false });
+
+    window.addEventListener("resize", layout);
+    obj("#prev").on("click", () => loadLevel(level_index - 1));
+    obj("#reset").on("click", () => loadLevel(level_index));
+    obj("#next").on("click", () => loadLevel(level_index + 1));
+    loadLevel((+params.get("level") || 1) - 1);
+
+    function loop() {
+      setTimeout(loop, 1000 / 60);
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      handleInput();
+      board.step(TURN_SPEED);
+      let now_solved = board.flow();
+
+      grid.forEach(tile => {
+        let cell = board.getCell(tile.x, tile.y);
+        if (cell && cell.gap) drawGap(tile.getCenter().x, tile.getCenter().y, selected >= 0 && !cell.item);
+      });
+      board.forEachItem((item, x, y) => {
+        let ct = grid.tiles[x][y].getCenter();
+        drawItem(item, ct.x, ct.y);
+      });
+      if (tray_size) drawTray();
+
+      if (now_solved) {
+        ctx.fillStyle = "#222";
+        ctx.font = "bold 36px sans-serif";
+        ctx.textAlign = "center";
+        ctx.fillText("Solved!", BOARD_WIDTH / 2, portrait ? 58 : 60);
+      }
+      if (now_solved != solved) {
+        solved = now_solved;
+        obj("#next").classList.toggle("ready", solved);
+      }
+    }
+
+    loop();
+
+  </script>
+  <!-- <script src="https://open.spotify.com/embed/iframe-api/v1" async></script> -->
+  <!-- <div id="embed-iframe"></div> -->
+</body>
+
+</html>

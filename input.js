@@ -16,6 +16,11 @@ class mouse{
         } else {
             x = e.clientX - br.left;
             y = e.clientY - br.top;
+            // a canvas drawn smaller or larger than its pixel size by css
+            if(element.width && br.width){
+                x *= element.width / br.width;
+                y *= element.height / br.height;
+            }
         }
         return {x,y};
     }
