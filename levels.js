@@ -129,4 +129,15 @@ const LEVELS = [
     ],
     seed: 234
   },
+  {
+    name: "",
+    hint: "",
+    rows: [
+      ".  L0 0r U1 Gb L0 U1 L2",
+      "L0 L1 X0 C0 I0 X0 L3 I1",
+      "Gt I1 T0 U3 U1 0t C0 I1",
+      "U0 C1 0b L1 I0 C0 U2 I1",
+      "L0 T0 I0 U3 L0 Gr L0 T3",
+    ],
+  },
 ];
