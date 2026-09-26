@@ -105,6 +105,14 @@
       color: #1d6f65;
     }
 
+    #solutions.unique {
+      color: #1d6f65;
+    }
+
+    #solutions.many {
+      color: #9a5b00;
+    }
+
     #submit-status {
       margin: 0;
       font-size: 13px;
@@ -168,6 +176,31 @@
     </p>
 
     <div id="status"></div>
+    <p class="help" id="solutions"></p>
+
+    <h3>Generate</h3>
+    <div class="row">
+      Colors <input id="g-colors" type="number" min="1" max="5" value="2" />
+      Splits <input id="g-splits" type="number" min="0" max="3" value="0" title="Colors that feed two goals" />
+      Min path <input id="g-min" type="number" min="2" max="20" value="6" />
+    </div>
+    <div class="row">
+      Tray <input id="g-tray" type="number" min="0" max="5" value="0" />
+      Gaps <input id="g-gaps" type="number" min="0" max="6" value="0" title="Extra empty gaps as decoys" />
+    </div>
+    <div class="row">
+      <label><input id="g-fill" type="checkbox" checked /> Fill with decoys</label>
+      <label><input id="g-unique" type="checkbox" checked /> Unique paths only</label>
+    </div>
+    <div class="row">
+      <button id="generate">Generate</button>
+      <button id="randomize">Randomize all</button>
+    </div>
+    <p class="help">
+      Uses the width and height above. Both buttons replace what you've built.
+      "Randomize all" picks new settings too.
+    </p>
+    <p class="help" id="gen-status"></p>
 
     <h3>Scramble</h3>
     <div class="row">
@@ -317,6 +350,8 @@
       if (goals && lit == goals && !solved) problems.push("a source isn't reaching a goal of its color");
       if (tray > MAX_TRAY) problems.push(`only ${MAX_TRAY} tray pieces fit`);
       let status = obj("#status");
+      if (solved && tray <= MAX_TRAY) countSolutions(level);
+      else stopCounting();
       status.classList.toggle("ok", solved && tray <= MAX_TRAY);
       status.textContent = solved && tray <= MAX_TRAY
         ? "Solution works: every goal is lit by a matching source."
@@ -335,6 +370,124 @@
         : "No saved seed, so it scrambles with one made from the layout (changes when you edit).";
       if (preview_seed != null && preview_seed != saved_seed) label += ` Previewing unsaved seed ${preview_seed}.`;
       obj("#seed-label").textContent = label;
+    }
+
+    // Counting runs in worker.js so a big board doesn't freeze the page. Each
+    // edit waits a moment, then replaces any count still running.
+    const COUNT_LIMIT = 3e6;
+    let count_worker = null;
+    let count_timer = null;
+
+    function stopCounting() {
+      clearTimeout(count_timer);
+      if (count_worker) count_worker.terminate();
+      count_worker = null;
+      obj("#solutions").textContent = "";
+      obj("#solutions").className = "help";
+    }
+
+    function countSolutions(level) {
+      stopCounting();
+      obj("#solutions").textContent = "Counting solutions...";
+      count_timer = setTimeout(() => {
+        count_worker = new Worker("worker.js");
+        count_worker.onmessage = e => {
+          showCount(e.data.result);
+          count_worker.terminate();
+          count_worker = null;
+        };
+        count_worker.onerror = () => {
+          obj("#solutions").textContent = "Couldn't run the solution counter (open the editor through the server, not as a file).";
+        };
+        count_worker.postMessage({ type: "count", level, limit: COUNT_LIMIT });
+      }, 300);
+    }
+
+    function showCount(r) {
+      let label = obj("#solutions");
+      let plural = n => n == 1 ? "" : "s";
+      if (!r.valid) {
+        label.textContent = "";
+        return;
+      }
+      if (r.aborted) {
+        label.className = "help many";
+        label.textContent = `Too many possibilities to finish counting (found ${r.solutions} solution${plural(r.solutions)} before stopping).`;
+      } else if (r.solutions == 1) {
+        label.className = "help unique";
+        label.textContent = "1 solution: there's exactly one way to solve it.";
+      } else if (r.routeUnique) {
+        label.className = "help unique";
+        label.textContent = `${r.solutions} solutions, but every one uses all of your paths. They only differ in harmless ways, like a decoy lit up as a dead end.`;
+      } else {
+        label.className = "help many";
+        label.textContent = `${r.solutions} solutions, lighting the board ${r.ways} different ways. Some skip parts of your paths, so there are shortcuts.`;
+      }
+    }
+
+    // generator settings, clamped to what fits the board
+    function generatorParams() {
+      let num = (id, min, max) => Math.max(min, Math.min(max, Math.round(+obj(id).value || 0)));
+      let colors = num("#g-colors", 1, 5);
+      let params = {
+        width, height, colors,
+        splits: num("#g-splits", 0, Math.min(3, colors)),
+        minLength: num("#g-min", 2, 20),
+        tray: num("#g-tray", 0, MAX_TRAY),
+        gaps: num("#g-gaps", 0, 6),
+        fill: obj("#g-fill").checked,
+        unique: obj("#g-unique").checked,
+        timeLimit: 8000,
+      };
+      obj("#g-splits").value = params.splits;
+      return params;
+    }
+
+    let gen_worker = null;
+    function generate() {
+      if (gen_worker) gen_worker.terminate();
+      let params = generatorParams();
+      let buttons = [obj("#generate"), obj("#randomize")];
+      buttons.forEach(b => b.disabled = true);
+      obj("#gen-status").textContent = params.unique ? "Generating (looking for a unique one, up to 8 seconds)..." : "Generating...";
+      gen_worker = new Worker("worker.js");
+      gen_worker.onerror = () => {
+        obj("#gen-status").textContent = "Couldn't run the generator (open the editor through the server, not as a file).";
+        buttons.forEach(b => b.disabled = false);
+      };
+      gen_worker.onmessage = e => {
+        let r = e.data.result;
+        gen_worker.terminate();
+        gen_worker = null;
+        buttons.forEach(b => b.disabled = false);
+        if (r.failed) {
+          obj("#gen-status").textContent = `Couldn't make a level with these settings (${r.attempts} tries). Try a bigger board, fewer colors or splits, or a shorter min path.`;
+          return;
+        }
+        loadLevel({ name: "Generated", hint: "", rows: r.level.rows });
+        let text = `Made in ${r.attempts} tr${r.attempts == 1 ? "y" : "ies"}.`;
+        if (r.notUnique) text += ` No unique version turned up in time, so this is the closest one found.`;
+        obj("#gen-status").textContent = text;
+      };
+      gen_worker.postMessage({ type: "generate", params });
+    }
+
+    function randomizeAll() {
+      let pick = (min, max) => min + Math.floor(Math.random() * (max - min + 1));
+      let w = pick(4, 8);
+      let h = pick(3, 7);
+      let colors = pick(1, Math.max(1, Math.min(4, Math.floor(w * h / 9))));
+      obj("#width").value = w;
+      obj("#height").value = h;
+      width = w;
+      height = h;
+      obj("#g-colors").value = colors;
+      obj("#g-splits").value = pick(0, Math.min(colors, 1));
+      obj("#g-min").value = pick(3, Math.min(10, w + h - 2));
+      obj("#g-tray").value = Math.random() < 0.5 ? 0 : pick(1, Math.min(4, colors + 1));
+      obj("#g-gaps").value = pick(0, 3);
+      obj("#g-fill").checked = Math.random() < 0.8;
+      generate();
     }
 
     function paint(x, y) {
@@ -458,6 +611,12 @@
       show_scrambled = false;
       rebuild();
     });
+    obj("#generate").on("click", () => {
+      width = Math.max(1, Math.min(8, +obj("#width").value || width));
+      height = Math.max(1, Math.min(7, +obj("#height").value || height));
+      generate();
+    });
+    obj("#randomize").on("click", randomizeAll);
     obj("#shuffle").on("click", () => {
       preview_seed = Math.floor(Math.random() * 2 ** 32);
       show_scrambled = true;
