@@ -24,10 +24,17 @@
     canvas {
       background-color: lightgray;
       display: block;
+      max-width: 100%;
+      height: auto;
+      touch-action: none;
+      -webkit-touch-callout: none;
+      -webkit-user-select: none;
+      user-select: none;
     }
 
     #side {
       width: 340px;
+      max-width: 100%;
       display: flex;
       flex-direction: column;
       gap: 10px;
@@ -101,6 +108,28 @@
       color: #555;
       margin: 0;
     }
+
+    /* phones: board on top, scaled to fit, controls underneath */
+    @media (max-width: 1200px) {
+      body {
+        flex-direction: column;
+        margin: 8px;
+      }
+
+      canvas {
+        width: 100%;
+        max-width: 800px;
+      }
+
+      #side {
+        width: 100%;
+        max-width: 800px;
+      }
+
+      .tool {
+        min-height: 40px;
+      }
+    }
   </style>
 </head>
 
@@ -124,9 +153,9 @@
     <div class="row" id="tools"></div>
     <div class="row" id="swatches"></div>
     <p class="help">
-      Click a cell to paint it. Click a piece again with the same tool to rotate it,
+      Click or tap a cell to paint it. Click a piece again with the same tool to rotate it,
       or use Rotate to turn any piece without replacing it.
-      Right-click erases. "Tray" makes a piece start in the tray, leaving a gap.
+      Right-click or press and hold erases. "Tray" makes a piece start in the tray, leaving a gap.
       Build the level solved; the game scrambles it.
     </p>
 
@@ -359,6 +388,51 @@
     mouse.start(canvas);
     canvas.on("mouseenter", () => hovering = true);
     canvas.on("mouseleave", () => hovering = false);
+
+    // taps paint and press-and-hold erases, like the game. The mouse events a
+    // tap turns into arrive together, so mouseup would clear mouse.down before
+    // the loop ever saw it; preventDefault stops those and we set it ourselves.
+    const HOLD_MS = 450;
+    let hold_timer = null;
+    let touch_start = null;
+    function touchToMouse(t) {
+      let br = canvas.getBoundingClientRect();
+      mouse.pos.x = (t.clientX - br.left) * canvas.width / br.width;
+      mouse.pos.y = (t.clientY - br.top) * canvas.height / br.height;
+    }
+    canvas.on("touchstart", e => {
+      e.preventDefault();
+      clearTimeout(hold_timer);
+      touch_start = null;
+      if (e.touches.length > 1) return;
+      let t = e.touches[0];
+      touch_start = { clientX: t.clientX, clientY: t.clientY };
+      hold_timer = setTimeout(() => {
+        touchToMouse(touch_start);
+        mouse.right = true;
+        touch_start = null;
+      }, HOLD_MS);
+    }, { passive: false });
+    canvas.on("touchmove", e => {
+      let t = e.touches[0];
+      if (touch_start && Math.hypot(t.clientX - touch_start.clientX, t.clientY - touch_start.clientY) > 10) {
+        clearTimeout(hold_timer);
+        touch_start = null;
+      }
+    }, { passive: true });
+    canvas.on("touchend", e => {
+      e.preventDefault();
+      clearTimeout(hold_timer);
+      if (touch_start) {
+        touchToMouse(touch_start);
+        mouse.down = true;
+      }
+      touch_start = null;
+    }, { passive: false });
+    canvas.on("touchcancel", () => {
+      clearTimeout(hold_timer);
+      touch_start = null;
+    });
     obj("#name").on("input", rebuild);
     obj("#hint").on("input", rebuild);
     obj("#width").on("change", () => resize(Math.max(1, Math.min(8, +obj("#width").value || 1)), height));
@@ -407,7 +481,8 @@
       setTimeout(loop, 1000 / 60);
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-      let tile = hovering ? grid.getActiveTile() : null;
+      // a touch has no hover, so it only picks a tile when it taps or holds
+      let tile = hovering || mouse.down || mouse.right ? grid.getActiveTile() : null;
       if (tile && mouse.down) paint(tile.x, tile.y);
       if (tile && mouse.right) {
         cells[tile.x][tile.y] = null;
