@@ -14,24 +14,16 @@
   <script src="puzzle.js"></script>
   <script src="levels.js"></script>
   <script src="render.js"></script>
+  <link rel="stylesheet" href="style.css" />
   <style>
-    body {
-      font-family: sans-serif;
-    }
-
-    body {
-      margin: 8px;
-    }
-
     canvas {
-      background-color: lightgray;
       display: block;
       margin: 0 auto;
       width: auto;
       height: auto;
       max-width: 100%;
       /* leaves room for the level name, hint and buttons */
-      max-height: calc(100vh - 140px);
+      max-height: calc(100vh - 150px);
       touch-action: none;
       -webkit-touch-callout: none;
       -webkit-user-select: none;
@@ -41,35 +33,105 @@
     #hud {
       max-width: 1000px;
       margin: 0 auto;
-      padding: 8px 0;
-    }
-
-    #hud button {
-      font-size: 16px;
-      padding: 8px 16px;
+      padding: 10px 0;
     }
 
     #hud p {
-      margin: 6px 0;
-      color: #444;
+      margin: 6px 0 10px;
+      color: var(--muted);
     }
 
-    #hud button.ready {
-      background: #2a9d8f;
-      color: white;
-      font-weight: bold;
+    #level-count {
+      color: var(--muted);
+    }
+
+    #hud .buttons {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    #menu {
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 24px 4px;
+    }
+
+    #menu header {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 24px;
+    }
+
+    #menu h1 {
+      margin: 0;
+      font-size: 36px;
+      letter-spacing: 0.5px;
+    }
+
+    #level-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+      gap: 14px;
+    }
+
+    .level-box {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      aspect-ratio: 1;
+      padding: 12px;
+      border-radius: 18px;
+      text-align: center;
+    }
+
+    .level-box:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 16px rgba(31, 41, 51, 0.18);
+    }
+
+    .level-box .number {
+      font-size: 34px;
+      font-weight: 700;
+      color: var(--accent-dark);
+    }
+
+    .level-box .name {
+      font-size: 14px;
+      color: var(--muted);
+    }
+
+    .hidden {
+      display: none !important;
     }
   </style>
 </head>
 
 <body>
-  <canvas width="1000" height="700"></canvas>
-  <div id="hud">
-    <b id="level-name"></b> <span id="level-count"></span>
-    <p id="level-hint"></p>
-    <button id="prev">Prev</button>
-    <button id="reset">Reset</button>
-    <button id="next">Next</button>
+  <div id="menu" class="hidden">
+    <header>
+      <h1>Spinny Lines</h1>
+      <a class="button primary" href="editor.html">Level Editor</a>
+    </header>
+    <div id="level-grid"></div>
+  </div>
+  <div id="game">
+    <canvas width="1000" height="700"></canvas>
+    <div id="hud">
+      <b id="level-name"></b> <span id="level-count"></span>
+      <p id="level-hint"></p>
+      <div class="buttons">
+        <button id="menu-button">Menu</button>
+        <button id="prev">Prev</button>
+        <button id="reset">Reset</button>
+        <button id="next">Next</button>
+      </div>
+    </div>
   </div>
   <!-- <script src="music.js"></script> -->
   <script>
@@ -244,7 +306,34 @@
     obj("#prev").on("click", () => loadLevel(level_index - 1));
     obj("#reset").on("click", () => loadLevel(level_index));
     obj("#next").on("click", () => loadLevel(level_index + 1));
+
+    // the menu is the landing page unless a level or playtest was asked for
+    function showMenu(visible) {
+      obj("#menu").classList.toggle("hidden", !visible);
+      obj("#game").classList.toggle("hidden", visible);
+      if (!visible) layout();
+    }
+
+    levels.forEach((level, i) => {
+      let box = create("button");
+      box.className = "level-box";
+      let number = create("span");
+      number.className = "number";
+      number.textContent = i + 1;
+      let name = create("span");
+      name.className = "name";
+      name.textContent = level.name;
+      box.append(number, name);
+      box.on("click", () => {
+        loadLevel(i);
+        showMenu(false);
+      });
+      obj("#level-grid").appendChild(box);
+    });
+    obj("#menu-button").on("click", () => showMenu(true));
+
     loadLevel((+params.get("level") || 1) - 1);
+    showMenu(!params.has("level") && !params.has("playtest"));
 
     function loop() {
       setTimeout(loop, 1000 / 60);

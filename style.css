@@ -1,0 +1,93 @@
+/* Shared look for the game, menu and level editor.
+   The canvas stays light because pieces and canvas text are drawn dark. */
+:root {
+  --bg-top: #e8eef5;
+  --bg-bottom: #cfd9e6;
+  --board: #e4e7eb;
+  --panel: #ffffff;
+  --text: #1f2933;
+  --muted: #52606d;
+  --accent: #2a9d8f;
+  --accent-dark: #21867a;
+  --border: #c3ccd6;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  padding: 12px;
+  min-height: 100vh;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  color: var(--text);
+  background: linear-gradient(160deg, var(--bg-top), var(--bg-bottom)) fixed;
+}
+
+canvas {
+  background-color: var(--board);
+  border-radius: 14px;
+  box-shadow: 0 4px 18px rgba(31, 41, 51, 0.15);
+}
+
+button,
+.button {
+  display: inline-block;
+  text-decoration: none;
+  font: inherit;
+  font-size: 15px;
+  padding: 8px 16px;
+  color: var(--text);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 1px 2px rgba(31, 41, 51, 0.1);
+  cursor: pointer;
+  transition: background 0.15s, transform 0.1s, box-shadow 0.15s;
+}
+
+button:hover,
+.button:hover {
+  background: #f1f4f8;
+  box-shadow: 0 2px 6px rgba(31, 41, 51, 0.15);
+}
+
+button:active,
+.button:active {
+  transform: translateY(1px);
+}
+
+button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.primary,
+button.ready {
+  background: var(--accent);
+  border-color: var(--accent-dark);
+  color: white;
+  font-weight: 600;
+}
+
+.primary:hover,
+button.ready:hover {
+  background: var(--accent-dark);
+}
+
+input,
+select,
+textarea {
+  font: inherit;
+  font-size: 14px;
+  padding: 6px 8px;
+  color: var(--text);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+a {
+  color: var(--accent-dark);
+}
