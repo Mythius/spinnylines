@@ -130,8 +130,8 @@ const LEVELS = [
     seed: 234
   },
   {
-    name: "",
-    hint: "",
+    name: "Long Way Round",
+    hint: "Red takes the long way around. Not every piece is on a path.",
     rows: [
       ".  L0 0r U1 Gb L0 U1 L2",
       "L0 L1 X0 C0 I0 X0 L3 I1",
@@ -139,5 +139,6 @@ const LEVELS = [
       "U0 C1 0b L1 I0 C0 U2 I1",
       "L0 T0 I0 U3 L0 Gr L0 T3",
     ],
+    seed: 456
   },
 ];
