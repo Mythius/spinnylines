@@ -129,4 +129,65 @@ const LEVELS = [
     ],
     seed: 234
   },
+  {
+    name: "Long Way Round",
+    hint: "Red takes the long way around. Not every piece is on a path.",
+    rows: [
+      ".  L0 0r U1 Gb L0 U1 L2",
+      "L0 L1 X0 C0 I0 X0 L3 I1",
+      "Gt I1 T0 U3 U1 0t C0 I1",
+      "U0 C1 0b L1 I0 C0 U2 I1",
+      "L0 T0 I0 U3 L0 Gr L0 T3",
+    ],
+    seed: 456
+  },
+  {
+    name: "Shared Corner",
+    hint: "Red and blue have to share a cell. A C can carry both.",
+    rows: [
+      "I2 L3 X1 0r I0 L2",
+      "T1 L1 I0 I0 L2 I1",
+      "C2 L0 U2 0b C0 U3",
+      ".  L0 Gb .  U0 L2",
+      ".  .  .  L2 T3 Gr",
+    ],
+    seed: 30
+  },
+  {
+    name: "Stepping Stones",
+    hint: "Three pieces, five gaps. Two of the gaps stay empty.",
+    rows: [
+      "_   I1 _   U1 0t .",
+      "L1* Gt U1  C0 U2 0o",
+      "U0* I0 C0* U3 U0 U3",
+      ".   Go L3  .  X3 .",
+    ],
+    seed: 122
+  },
+  {
+    name: "Fork in the Road",
+    hint: "Purple has two goals, and red has to cross teal to get home.",
+    rows: [
+      "U1 I0 T2 I0 Gv U1 L2",
+      "I1 Gv U3 L1 L2 I1 Gr",
+      "U0 L2 C1 I1 0t I1 Gt",
+      "C2 I1 0r X0 I0 L3 I1",
+      "C3 0v I1 L0 I0 I0 U3",
+    ],
+    seed: 166
+  },
+  {
+    name: "Grand Central",
+    hint: "Four colors, three pieces, four gaps. Orange splits to two goals.",
+    rows: [
+      "L1 U2 0o U1 L2 U1  T2 U2*",
+      "I1 I1 U0 L3 L0 L3  I1 Go",
+      "I1 U0 0b 0t U1 I0  U3 Gt",
+      "U0 U2 L1 C0 C0 I0* I0 U3",
+      "U1 X0 X0 C0 C0 I0  I0 L2",
+      "Go I1 I1 I1 U0 I0  Gr I1",
+      "_  Gb U0 L3 0r I0* I0 L3",
+    ],
+    seed: 226
+  },
 ];
